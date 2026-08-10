@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>רשימת קניות חכמה</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<!-- Firebase: only used when this page runs outside Claude (e.g. hosted on
+     GitHub Pages) and a real config is filled in below. Harmless otherwise. -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --bg: #23241f;
+    --panel: #2c2d26;
+    --chalk: #f2ede2;
+    --chalk-dim: #b9b6a9;
+    --avocado: #8fae52;
+    --avocado-dim: #5c7038;
+    --mustard: #d8a934;
+    --tomato: #c1523a;
+    --line: #45463c;
+    --stamp-in: #7a9a4a;
+    --stamp-needed: #9e1b41;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    padding:24px 16px 60px;
+    background:
+      radial-gradient(circle at 20% -10%, #33352c 0%, var(--bg) 55%);
+    font-family:'Rubik', sans-serif;
+    color: var(--chalk);
+    min-height:100vh;
+  }
+  .board{
+    max-width:520px;
+    margin:0 auto;
+    background: var(--panel);
+    border-radius:18px;
+    padding:22px 20px 28px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.03);
+    position:relative;
+    overflow:hidden;
+  }
+  .board::before{
+    content:"";
+    position:absolute; inset:0;
+    background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 34px);
+    pointer-events:none;
+  }
+  header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:6px;
+    position:relative;
+  }
+  h1{
+    font-size:1.5em;
+    font-weight:800;
+    margin:0;
+    letter-spacing:0.3px;
+  }
+  .sub{
+    font-family:'Space Mono', monospace;
+    font-size:0.72em;
+    color: var(--chalk-dim);
+    margin:0 0 18px;
+  }
+  .add-form{
+    display:flex;
+    gap:8px;
+    margin-bottom:20px;
+    position:relative;
+  }
+  input[type="text"]{
+    flex:1;
+    padding:8px 12px;
+    border-radius:9px;
+    border:1px solid var(--line);
+    background:#1c1d18;
+    color:var(--chalk);
+    font-family:'Rubik', sans-serif;
+    font-size:0.88em;
+    outline:none;
+  }
+  input[type="text"]:focus{ border-color: var(--avocado); }
+  input[type="text"]::placeholder{ color:#6b6a5f; }
+  button{
+    font-family:'Rubik', sans-serif;
+    font-weight:700;
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+  }
+  .btn-add{
+    background: var(--avocado);
+    color:#1c2410;
+    padding:0 20px;
+    font-size:0.95em;
+  }
+  .btn-add:hover{ background:#9fbf63; }
+
+  .qty-picker{
+    display:flex;
+    align-items:center;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#1c1d18;
+    overflow:hidden;
+    flex-shrink:0;
+  }
+  .qty-picker input{
+    width:26px;
+    text-align:center;
+    border:none;
+    background:transparent;
+    color: var(--chalk);
+    font-family:'Space Mono', monospace;
+    font-size:0.85em;
+    padding:0;
+    outline:none;
+    -moz-appearance:textfield;
+  }
+  .qty-picker input::-webkit-outer-spin-button,
+  .qty-picker input::-webkit-inner-spin-button{
+    -webkit-appearance:none;
+    margin:0;
+  }
+  .qty-step{
+    width:24px;
+    height:100%;
+    padding:8px 0;
+    background:transparent;
+    color: var(--chalk-dim);
+    font-size:0.9em;
+    line-height:1;
+  }
+  .qty-step:hover{ background: rgba(143,174,82,0.15); color: var(--avocado); }
+
+  .btn-share{
+    display:block;
+    width:100%;
+    background: transparent;
+    border:1px solid var(--avocado-dim);
+    color: var(--avocado);
+    padding:10px 14px;
+    font-size:0.85em;
+    margin-bottom:18px;
+  }
+  .btn-share:hover{ background: rgba(143,174,82,0.12); border-color: var(--avocado); }
+
+  .btn-scan{
+    display:block;
+    width:100%;
+    background: transparent;
+    border:1px solid var(--mustard);
+    color: var(--mustard);
+    padding:10px 14px;
+    font-size:0.85em;
+    margin-bottom:10px;
+  }
+  .btn-scan:hover{ background: rgba(216,169,52,0.12); }
+
+  .scan-overlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    background: rgba(10,10,8,0.92);
+    z-index:1000;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .scan-overlay.open{ display:flex; }
+  .scan-box{
+    position:relative;
+    width:100%;
+    max-width:420px;
+    background: var(--panel);
+    border-radius:16px;
+    padding:16px;
+    text-align:center;
+  }
+  .scan-box video{
+    width:100%;
+    border-radius:10px;
+    background:#000;
+    max-height:60vh;
+    object-fit:cover;
+  }
+  .scan-frame{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform: translate(-50%, -50%);
+    width:70%;
+    height:90px;
+    border:2px solid var(--avocado);
+    border-radius:8px;
+    pointer-events:none;
+    box-shadow: 0 0 0 999px rgba(0,0,0,0.35);
+  }
+  .scan-status{
+    color: var(--chalk-dim);
+    font-size:0.85em;
+    margin:12px 0;
+    min-height:1.2em;
+  }
+  .btn-scan-close{
+    background: var(--tomato);
+    color: var(--chalk);
+    padding:9px 18px;
+    font-size:0.85em;
+  }
+
+  .form-error{
+    display:none;
+    color: var(--tomato);
+    font-size:0.78em;
+    margin:-12px 0 14px;
+  }
+  .category-extra{
+    display:none;
+    align-items:center;
+    gap:8px;
+    margin-bottom:14px;
+    font-size:0.82em;
+    color: var(--chalk-dim);
+  }
+  .category-extra select,
+  .category-extra input{
+    padding:6px 9px;
+    border-radius:7px;
+    border:1px solid var(--line);
+    background:#1c1d18;
+    color: var(--chalk);
+    font-family:'Rubik', sans-serif;
+    font-size:0.85em;
+    outline:none;
+    flex:1;
+    max-width:110px;
+  }
+  .category-extra select:focus,
+  .category-extra input:focus{ border-color: var(--avocado); }
+  .percent-mark{
+    color: var(--mustard);
+    font-family:'Space Mono', monospace;
+    font-weight:700;
+    min-width:14px;
+  }
+
+  .suggestion{
+    display:none;
+    align-items:center;
+    gap:8px;
+    font-size:0.8em;
+    color: var(--chalk-dim);
+    margin:-12px 0 14px;
+  }
+  .suggestion button{
+    background: var(--mustard);
+    color:#2b2308;
+    padding:4px 10px;
+    font-size:0.9em;
+    border-radius:6px;
+  }
+  .suggestion button:hover{ background:#e6bd50; }
+
+  .stock-toggle{
+    display:block;
+    width:100%;
+    text-align:center;
+    background:transparent;
+    border:1px dashed var(--line);
+    color: var(--chalk-dim);
+    padding:8px;
+    font-size:0.78em;
+    margin:6px 0 4px;
+    font-family:'Space Mono', monospace;
+  }
+  .stock-toggle:hover{ border-color: var(--chalk-dim); color: var(--chalk); }
+
+  .section-label{
+    font-family:'Space Mono', monospace;
+    font-size:0.7em;
+    letter-spacing:1.5px;
+    color: var(--chalk-dim);
+    margin: 18px 0 8px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .section-label::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background: var(--line);
+  }
+
+  .item-card{
+    background:#1c1d18;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 14px;
+    margin-bottom:10px;
+    position:relative;
+    transition: border-color .2s ease;
+  }
+  .item-card.is-needed{ border-color: rgba(158,27,65,0.55); }
+
+  .item-top{
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .item-title-wrap{
+    flex:1;
+  }
+  .item-title{
+    font-weight:700;
+    font-size:1.08em;
+  }
+  .item-price{
+    font-family:'Space Mono', monospace;
+    font-size:0.85em;
+    color: var(--mustard);
+    white-space:nowrap;
+  }
+
+  .buy-box{
+    position:relative;
+    flex-shrink:0;
+    width:24px;
+    height:24px;
+    margin-top:2px;
+    cursor:pointer;
+  }
+  .buy-box-mark{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:1.5px solid var(--line);
+    border-radius:6px;
+    color:transparent;
+    font-size:0.85em;
+    font-weight:700;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .buy-box:hover .buy-box-mark{ border-color: var(--avocado); color: var(--avocado); }
+  .buy-box:active .buy-box-mark{
+    background: var(--avocado);
+    border-color: var(--avocado);
+    color:#1c2410;
+  }
+  .buy-box:focus-visible .buy-box-mark{ border-color: var(--mustard); outline:none; }
+
+  .qty-badge{
+    display:inline-block;
+    font-family:'Space Mono', monospace;
+    font-size:0.72em;
+    font-weight:700;
+    color: var(--chalk);
+    background: var(--avocado-dim);
+    padding:1px 7px;
+    border-radius:5px;
+    margin-inline-start:6px;
+  }
+
+  .stamp{
+    display:inline-block;
+    font-family:'Space Mono', monospace;
+    font-size:0.62em;
+    font-weight:700;
+    letter-spacing:0.5px;
+    padding:2px 8px;
+    border-radius:5px;
+    transform: rotate(-3deg);
+    margin-inline-start:8px;
+    border:1.5px solid;
+  }
+  .stamp.in_stock{ color: var(--stamp-in); border-color: var(--stamp-in); }
+  .stamp.needed{ color: var(--stamp-needed); border-color: var(--stamp-needed); }
+
+  .gauge-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .gauge{
+    flex:1;
+    height:8px;
+    border-radius:6px;
+    background:#33352c;
+    overflow:hidden;
+    position:relative;
+  }
+  .gauge-fill{
+    height:100%;
+    border-radius:6px;
+    transition: width .3s ease;
+  }
+  .gauge-pct{
+    font-family:'Space Mono', monospace;
+    font-size:0.72em;
+    color: var(--chalk-dim);
+    width:38px;
+    text-align:left;
+  }
+  .item-meta{
+    font-size:0.78em;
+    color: var(--chalk-dim);
+    margin-bottom:12px;
+  }
+  .item-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .btn-toggle{
+    background:transparent;
+    border:1px solid var(--line);
+    color: var(--chalk-dim);
+    padding:8px 12px;
+    font-size:0.82em;
+  }
+  .btn-toggle:hover{ border-color: var(--mustard); color: var(--mustard); }
+  .btn-del{
+    background:transparent;
+    border:1px solid var(--line);
+    color: var(--chalk-dim);
+    padding:8px 10px;
+    font-size:0.82em;
+  }
+  .btn-del:hover{ border-color: var(--tomato); color: var(--tomato); }
+
+  .empty{
+    text-align:center;
+    color: var(--chalk-dim);
+    font-size:0.85em;
+    padding:20px 0;
+  }
+  .status-line{
+    text-align:center;
+    font-family:'Space Mono', monospace;
+    font-size:0.68em;
+    color:#6b6a5f;
+    margin-top:18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="board">
+  <header>
+    <h1>🧺 רשימת קניות חכמה</h1>
+  </header>
+  <p class="sub">מעקב מלאי לפי קצב צריכה ממוצע</p>
+
+  <div class="add-form">
+    <input type="text" id="itemName" placeholder="שם המוצר (למשל: חלב 3%)" spellcheck="true" lang="he" autocomplete="off">
+    <div class="qty-picker">
+      <button type="button" class="qty-step" onclick="stepQuantity(-1)">−</button>
+      <input type="number" id="itemQty" value="1" min="1" step="1">
+      <button type="button" class="qty-step" onclick="stepQuantity(1)">+</button>
+    </div>
+    <button class="btn-add" onclick="addItem()">הוסף</button>
+  </div>
+  <div class="category-extra" id="categoryExtra"></div>
+  <div class="suggestion" id="spellSuggestion"></div>
+  <div class="form-error" id="formError"></div>
+
+  <button class="btn-scan" onclick="openScanner()">📷 סרוק ברקוד מוצר</button>
+  <button class="btn-share" onclick="shareToWhatsApp()">📤 שתף רשימה בוואטסאפ</button>
+
+  <div id="neededSection"></div>
+  <div id="stockToggle"></div>
+  <div id="stockSection"></div>
+
+  <div class="status-line" id="statusLine">טוען נתונים…</div>
+
+  <div class="scan-overlay" id="scanOverlay">
+    <div class="scan-box">
+      <video id="scanVideo" autoplay playsinline muted></video>
+      <div class="scan-frame"></div>
+      <div class="scan-status" id="scanStatus">מבקש הרשאת מצלמה…</div>
+      <button class="btn-scan-close" onclick="closeScanner()">✕ סגור</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let items = [];
+  let loaded = false;
+  let showStock = false; // bought items stay hidden until you choose to reveal them
+
+  const STORAGE_KEY = 'shopping-list:items';
+
+  // --- storage backend ------------------------------------------------
+  // This same file works two ways:
+  // 1) Inside Claude (as this artifact) -> uses Claude's built-in shared
+  //    storage automatically, no setup needed.
+  // 2) Hosted elsewhere (e.g. GitHub Pages) -> uses a free Firebase
+  //    Realtime Database instead, which ALSO syncs live between everyone
+  //    who has the page open. To enable this, replace the placeholder
+  //    values below with your own Firebase project's config (see the
+  //    setup guide for where to find these).
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID"
+  };
+
+  const usingClaudeStorage = (typeof window.storage !== 'undefined');
+  let firebaseDb = null;
+  let firebaseReady = false;
+
+  if(!usingClaudeStorage && typeof firebase !== 'undefined' && firebaseConfig.apiKey !== 'YOUR_API_KEY'){
+    try{
+      firebase.initializeApp(firebaseConfig);
+      firebaseDb = firebase.database();
+      firebaseReady = true;
+    } catch(e){
+      console.error('שגיאת אתחול Firebase:', e);
+    }
+  }
+
+  const SEED_ITEMS = [
+    { id: "1", name: "חלב 3%", status: "in_stock", lastPurchaseDate: "2026-07-25", averageDays: 5, lastPrice: 7.20, quantity: 1 },
+    { id: "2", name: "קפה נמס", status: "in_stock", lastPurchaseDate: "2026-07-01", averageDays: 20, lastPrice: 35.00, quantity: 1 }
+  ];
+
+  function ingestRawItems(raw){
+    const arr = Array.isArray(raw) ? raw : Object.values(raw || {});
+    return arr.map((i, idx) => sanitizeItem(i, Date.now() + idx)).filter(Boolean);
+  }
+
+  async function loadItems(){
+    if(usingClaudeStorage){
+      try{
+        const res = await window.storage.get(STORAGE_KEY, true);
+        if(res && res.value){
+          items = ingestRawItems(JSON.parse(res.value));
+        } else {
+          items = SEED_ITEMS.slice();
+          await persistItems();
+        }
+      } catch(e){
+        console.error('שגיאת טעינה:', e);
+        items = [];
+      }
+      loaded = true;
+      document.getElementById('statusLine').textContent = '👥 רשימה משותפת — גלויה לכל מי שפותח את הצ׳אט הזה';
+      renderItems();
+
+    } else if(firebaseReady){
+      firebaseDb.ref(STORAGE_KEY).on('value', snapshot => {
+        const val = snapshot.val();
+        if(val){
+          items = ingestRawItems(val);
+        } else {
+          items = SEED_ITEMS.slice();
+          persistItems(); // seed the database once, on whoever opens it first
+        }
+        loaded = true;
+        document.getElementById('statusLine').textContent = '👥 רשימה משותפת בזמן אמת (Firebase)';
+        renderItems();
+      }, err => {
+        console.error('שגיאת Firebase:', err);
+        items = [];
+        loaded = true;
+        renderItems();
+      });
+
+    } else {
+      // no backend configured at all -> works for this session only
+      items = SEED_ITEMS.slice();
+      loaded = true;
+      document.getElementById('statusLine').textContent = '⚠️ אין שמירה מוגדרת — הנתונים לא יישמרו אחרי סגירת הדף';
+      renderItems();
+    }
+  }
+
+  async function persistItems(){
+    if(usingClaudeStorage){
+      try{
+        const result = await window.storage.set(STORAGE_KEY, JSON.stringify(items), true);
+        if(!result){ console.error('שמירה נכשלה'); }
+      } catch(e){
+        console.error('שגיאת שמירה:', e);
+      }
+    } else if(firebaseReady){
+      try{
+        await firebaseDb.ref(STORAGE_KEY).set(items);
+      } catch(e){
+        console.error('שגיאת שמירה ל-Firebase:', e);
+      }
+    }
+    // else: nothing configured, changes just stay in memory for this session
+  }
+
+  function sanitizeItem(raw, fallbackId){
+    if(!raw || typeof raw !== 'object') return null;
+
+    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+    if(!name) return null; // an item with no name can't be fixed, drop it
+
+    let lastPurchaseDate = raw.lastPurchaseDate;
+    if(!lastPurchaseDate || isNaN(new Date(lastPurchaseDate).getTime())){
+      lastPurchaseDate = new Date().toISOString().slice(0,10); // bad/missing date -> assume today
+    }
+
+    let averageDays = parseInt(raw.averageDays, 10);
+    if(isNaN(averageDays) || averageDays <= 0) averageDays = 7; // invalid pace -> sensible default
+
+    let lastPrice = parseFloat(raw.lastPrice);
+    if(isNaN(lastPrice) || lastPrice < 0) lastPrice = 0;
+
+    let quantity = parseInt(raw.quantity, 10);
+    if(isNaN(quantity) || quantity < 1) quantity = 1;
+
+    let status = raw.status === 'needed' ? 'needed' : 'in_stock';
+
+    return {
+      id: raw.id ? String(raw.id) : String(fallbackId),
+      name, status, lastPurchaseDate, averageDays, lastPrice, quantity
+    };
+  }
+
+  function showFormError(msg){
+    const el = document.getElementById('formError');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  // common Hebrew grocery items, used to suggest fixes for typos
+  const COMMON_ITEMS = [
+    'חלב', 'חלב 3%', 'חלב 1%', 'ביצים', 'לחם', 'לחם אחיד', 'קפה נמס', 'קפה טחון',
+    'סוכר', 'מלח', 'קמח', 'שמן זית', 'שמן קנולה', 'אורז', 'פסטה', 'עגבניות',
+    'מלפפונים', 'בצל', 'תפוחי אדמה', 'גבינה צהובה', 'גבינה לבנה', 'קוטג',
+    'יוגורט', 'חמאה', 'טחינה', 'קטשופ', 'מיונז', 'חרדל', 'טונה', 'שימורי תירס',
+    'שוקולד', 'ביסקוויטים', 'עוגיות', 'נייר טואלט', 'סבון כלים', 'אבקת כביסה',
+    'מגבות נייר', 'שקיות אשפה', 'תה', 'מים מינרלים', 'מיץ תפוזים', 'בננות',
+    'תפוחים', 'לימונים', 'עוף', 'בשר טחון', 'דגים'
+  ];
+
+  // category detection: typing a product name auto-shows the field that
+  // makes sense for it (fat % for dairy, kg for meat, grams for produce)
+  const DAIRY_KEYWORDS = ['חלב', 'גבינה', 'יוגורט', 'קוטג', 'חמאה', 'שמנת', 'לבן', 'לאבנה'];
+  const MEAT_KEYWORDS = ['בשר', 'עוף', 'בקר', 'כבש', 'הודו', 'נקניק', 'קציצות', 'סטייק', 'כבד', 'דג', 'דגים', 'סלמון', 'טחון'];
+  const WEIGHED_KEYWORDS = [
+    'עגבניות', 'עגבנייה', 'מלפפון', 'מלפפונים', 'בצל', 'תפוח אדמה', 'תפוחי אדמה',
+    'גזר', 'פלפל', 'חסה', 'קמח', 'סוכר', 'אורז', 'תמרים', 'אגוזים', 'שקדים',
+    'פיצוחים', 'תפוחים', 'ענבים', 'תות', 'תותים', 'קישוא', 'קישואים', 'חציל', 'חצילים'
+  ];
+
+  function detectCategory(name){
+    const clean = name.trim();
+    if(!clean) return null;
+    const hasWord = list => list.some(w => clean.includes(w));
+
+    // meat/fish checked first: "בשר טחון" would otherwise also match nothing
+    // dairy-specific, so order avoids ambiguous overlaps
+    if(hasWord(MEAT_KEYWORDS)) return 'meat';
+    if(hasWord(DAIRY_KEYWORDS)) return 'dairy';
+    if(hasWord(WEIGHED_KEYWORDS)) return 'weighed';
+    return null;
+  }
+
+  function renderCategoryExtra(){
+    const nameVal = document.getElementById('itemName').value;
+    const box = document.getElementById('categoryExtra');
+    const category = detectCategory(nameVal);
+
+    if(category === 'dairy'){
+      box.style.display = 'flex';
+      box.innerHTML = `
+        <span>אחוז שומן:</span>
+        <input type="number" id="categoryValue" step="0.5" min="0" max="100" placeholder="לדוגמה: 3" oninput="updatePercentMark()">
+        <span class="percent-mark" id="percentMark"></span>`;
+    } else if(category === 'meat'){
+      box.style.display = 'flex';
+      box.innerHTML = `
+        <span>משקל (ק"ג):</span>
+        <input type="number" id="categoryValue" step="0.1" min="0" placeholder="לדוגמה: 1">`;
+    } else if(category === 'weighed'){
+      box.style.display = 'flex';
+      box.innerHTML = `
+        <span>משקל (גרם):</span>
+        <input type="number" id="categoryValue" step="10" min="0" placeholder="לדוגמה: 500">`;
+    } else {
+      box.style.display = 'none';
+      box.innerHTML = '';
+    }
+  }
+
+  function updatePercentMark(){
+    const el = document.getElementById('categoryValue');
+    const mark = document.getElementById('percentMark');
+    if(!el || !mark) return;
+    mark.textContent = el.value.trim() !== '' ? '%' : '';
+  }
+
+  function categorySuffix(){
+    const el = document.getElementById('categoryValue');
+    if(!el) return '';
+    const val = el.value.toString().trim();
+    if(!val) return '';
+
+    const category = detectCategory(document.getElementById('itemName').value);
+    if(category === 'dairy') return ` ${val}%`;
+    if(category === 'meat') return ` ${val} ק"ג`;
+    if(category === 'weighed') return ` ${val} גרם`;
+    return '';
+  }
+
+  function levenshtein(a, b){
+    a = a.trim(); b = b.trim();
+    const m = a.length, n = b.length;
+    if(m === 0) return n;
+    if(n === 0) return m;
+    const dp = Array.from({length: m+1}, () => new Array(n+1).fill(0));
+    for(let i=0;i<=m;i++) dp[i][0] = i;
+    for(let j=0;j<=n;j++) dp[0][j] = j;
+    for(let i=1;i<=m;i++){
+      for(let j=1;j<=n;j++){
+        const cost = a[i-1] === b[j-1] ? 0 : 1;
+        dp[i][j] = Math.min(
+          dp[i-1][j] + 1,
+          dp[i][j-1] + 1,
+          dp[i-1][j-1] + cost
+        );
+      }
+    }
+    return dp[m][n];
+  }
+
+  // build a flat word-level dictionary: every distinct word that appears in
+  // the common-items list or in the words already used, so a typo anywhere
+  // in a multi-word product name (not just the first word) can be caught
+  function buildWordDictionary(){
+    const words = new Set();
+    for(const phrase of COMMON_ITEMS){
+      phrase.split(/\s+/).forEach(w => { if(w) words.add(w); });
+    }
+    for(const it of items){
+      it.name.split(/\s+/).forEach(w => { if(w) words.add(w); });
+    }
+    return [...words];
+  }
+
+  function closestWord(word, dictionary){
+    const clean = word.trim();
+    if(clean.length < 2) return null;
+
+    let best = null;
+    let bestDist = Infinity;
+    for(const candidate of dictionary){
+      if(candidate.toLowerCase() === clean.toLowerCase()) return null; // already correct
+      const dist = levenshtein(clean, candidate);
+      const threshold = clean.length <= 4 ? 1 : 2;
+      if(dist <= threshold && dist < bestDist){
+        best = candidate;
+        bestDist = dist;
+      }
+    }
+    return best;
+  }
+
+  function findSpellingSuggestion(text){
+    const cleaned = text.trim();
+    if(cleaned.length < 2) return null;
+
+    // first, try the phrase as a whole against known full product names
+    const phraseCandidates = [...new Set([...COMMON_ITEMS, ...items.map(i => i.name)])];
+    for(const candidate of phraseCandidates){
+      if(candidate.toLowerCase() === cleaned.toLowerCase()) return null;
+    }
+
+    // then correct every word in the sentence, not just the first one
+    const dictionary = buildWordDictionary();
+    const words = cleaned.split(/\s+/);
+    let changed = false;
+
+    const correctedWords = words.map(word => {
+      const fix = closestWord(word, dictionary);
+      if(fix && fix !== word){
+        changed = true;
+        return fix;
+      }
+      return word;
+    });
+
+    return changed ? correctedWords.join(' ') : null;
+  }
+
+  function checkSpelling(){
+    const input = document.getElementById('itemName');
+    const box = document.getElementById('spellSuggestion');
+    const suggestion = findSpellingSuggestion(input.value);
+
+    if(suggestion){
+      box.style.display = 'flex';
+      box.innerHTML = `התכוונת ל&nbsp;<strong>${escapeHtml(suggestion)}</strong>?
+        <button onclick="applySuggestion('${suggestion.replace(/'/g, "\\'")}')">להשתמש בזה</button>`;
+    } else {
+      box.style.display = 'none';
+      box.innerHTML = '';
+    }
+  }
+
+  function applySuggestion(text){
+    const input = document.getElementById('itemName');
+    input.value = text;
+    document.getElementById('spellSuggestion').style.display = 'none';
+    input.focus();
+  }
+
+  function daysPassed(dateStr){
+    const last = new Date(dateStr);
+    const today = new Date();
+    const diff = Math.abs(today - last);
+    return Math.floor(diff / (1000*60*60*24));
+  }
+
+  function computePercentage(item){
+    const d = daysPassed(item.lastPurchaseDate);
+    return Math.min(Math.round((d / item.averageDays) * 100), 100);
+  }
+
+  function gaugeColor(pct){
+    if(pct >= 90) return 'var(--tomato)';
+    if(pct >= 60) return 'var(--mustard)';
+    return 'var(--avocado)';
+  }
+
+  function autoSyncStatus(){
+    // items that hit 100% consumption and are still marked in_stock become needed
+    items.forEach(item => {
+      const pct = computePercentage(item);
+      if(pct >= 100 && item.status === 'in_stock'){
+        item.status = 'needed';
+      }
+    });
+  }
+
+  function itemCardHtml(item){
+    const pct = computePercentage(item);
+    const dPassed = daysPassed(item.lastPurchaseDate);
+    const isNeeded = item.status === 'needed';
+    const stampLabel = isNeeded ? 'חסר' : 'במלאי';
+
+    return `
+      <div class="item-card ${isNeeded ? 'is-needed' : ''}">
+        <div class="item-top">
+          <div class="buy-box" title="סמן כנקנה" role="button" tabindex="0"
+               onclick="markAsBought('${item.id}')"
+               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();markAsBought('${item.id}');}">
+            <span class="buy-box-mark">✕</span>
+          </div>
+          <div class="item-title-wrap">
+            <span class="item-title">${escapeHtml(item.name)}</span>
+            ${item.quantity > 1 ? `<span class="qty-badge">×${item.quantity}</span>` : ''}
+            <span class="stamp ${item.status}">${stampLabel}</span>
+          </div>
+          <span class="item-price">₪${Number(item.lastPrice).toFixed(2)}</span>
+        </div>
+        <div class="gauge-row">
+          <div class="gauge"><div class="gauge-fill" style="width:${pct}%; background:${gaugeColor(pct)};"></div></div>
+          <span class="gauge-pct">${pct}%</span>
+        </div>
+        <div class="item-meta">קנייה אחרונה: לפני ${dPassed} ימים · ממוצע צריכה: ${item.averageDays} ימים</div>
+        <div class="item-actions">
+          <button class="btn-toggle" onclick="toggleStatus('${item.id}')">${isNeeded ? 'סמן כקיים' : 'סמן כחסר'}</button>
+          <button class="btn-toggle" title="ערוך שם ותדירות" onclick="editItem('${item.id}')">✎</button>
+          <button class="btn-del" title="מחק מוצר" onclick="deleteItem('${item.id}')">✕</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderItems(){
+    if(!loaded) return;
+    autoSyncStatus();
+
+    const byUrgency = (a, b) => computePercentage(b) - computePercentage(a);
+    const needed = items.filter(i => i.status === 'needed').sort(byUrgency);
+    const inStock = items.filter(i => i.status === 'in_stock').sort(byUrgency);
+
+    const neededSection = document.getElementById('neededSection');
+    const stockToggle = document.getElementById('stockToggle');
+    const stockSection = document.getElementById('stockSection');
+
+    neededSection.innerHTML = needed.length
+      ? `<div class="section-label">חסר בבית</div>` + needed.map(itemCardHtml).join('')
+      : (items.length === 0
+          ? `<div class="empty">הרשימה ריקה — הוסיפו מוצר ראשון למעלה</div>`
+          : `<div class="empty">✅ הכל במלאי, שום דבר לא חסר כרגע</div>`);
+
+    if(inStock.length === 0){
+      stockToggle.innerHTML = '';
+      stockSection.innerHTML = '';
+    } else if(showStock){
+      stockToggle.innerHTML = `<button class="stock-toggle" onclick="toggleStockView()">הסתר מוצרים במלאי ▲</button>`;
+      stockSection.innerHTML = `<div class="section-label">במלאי</div>` + inStock.map(itemCardHtml).join('');
+    } else {
+      stockToggle.innerHTML = `<button class="stock-toggle" onclick="toggleStockView()">הצג ${inStock.length} מוצרים במלאי ▾</button>`;
+      stockSection.innerHTML = '';
+    }
+  }
+
+  function toggleStockView(){
+    showStock = !showStock;
+    renderItems();
+  }
+
+  function markAsBought(id){
+    const item = items.find(i => i.id === id);
+    if(!item) return;
+
+    // learn the real consumption pace: blend the actual interval since the
+    // last purchase into the average instead of leaving it fixed forever
+    const interval = daysPassed(item.lastPurchaseDate);
+    if(interval > 0){
+      item.averageDays = Math.max(1, Math.round((item.averageDays + interval) / 2));
+    }
+    item.lastPurchaseDate = new Date().toISOString().slice(0,10);
+    item.status = 'in_stock';
+    renderItems();
+    persistItems();
+  }
+
+  function editItem(id){
+    const item = items.find(i => i.id === id);
+    if(!item) return;
+    const newName = prompt('שם המוצר:', item.name);
+    if(newName === null) return;
+    const trimmed = newName.trim();
+    if(trimmed){
+      item.name = trimmed;
+    } else {
+      alert('שם ריק אינו תקין — השם הקודם נשאר.');
+    }
+
+    const newAvg = prompt('כל כמה ימים בממוצע המוצר נגמר?', item.averageDays);
+    if(newAvg !== null){
+      const parsed = parseInt(newAvg, 10);
+      if(!isNaN(parsed) && parsed > 0){
+        item.averageDays = parsed;
+      } else {
+        alert(`"${newAvg}" אינו מספר ימים תקין — הערך הקודם (${item.averageDays}) נשאר.`);
+      }
+    }
+    renderItems();
+    persistItems();
+  }
+
+  function toggleStatus(id){
+    const item = items.find(i => i.id === id);
+    if(!item) return;
+    item.status = item.status === 'needed' ? 'in_stock' : 'needed';
+    renderItems();
+    persistItems();
+  }
+
+  function deleteItem(id){
+    items = items.filter(i => i.id !== id);
+    renderItems();
+    persistItems();
+  }
+
+  // --- barcode scanning ---------------------------------------------------
+  let scanStream = null;
+  let scanIntervalId = null;
+
+  async function openScanner(){
+    const overlay = document.getElementById('scanOverlay');
+    const status = document.getElementById('scanStatus');
+    const video = document.getElementById('scanVideo');
+
+    overlay.classList.add('open');
+    status.textContent = 'מבקש הרשאת מצלמה…';
+
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      status.textContent = 'הדפדפן הזה לא תומך בגישה למצלמה כאן. אפשר להזין את שם המוצר ידנית.';
+      return;
+    }
+
+    try{
+      scanStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      video.srcObject = scanStream;
+    } catch(e){
+      console.error('שגיאת מצלמה:', e);
+      status.textContent = 'לא הצלחתי לקבל גישה למצלמה (ייתכן שההרשאה נחסמה). אפשר להזין את שם המוצר ידנית.';
+      return;
+    }
+
+    if(!('BarcodeDetector' in window)){
+      status.textContent = 'הדפדפן הזה לא תומך בזיהוי ברקוד אוטומטי. אפשר להזין את שם המוצר ידנית.';
+      return;
+    }
+
+    status.textContent = 'כוונו את הברקוד לתוך המסגרת…';
+
+    let detector;
+    try{
+      detector = new BarcodeDetector({
+        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']
+      });
+    } catch(e){
+      status.textContent = 'זיהוי ברקוד לא זמין בדפדפן הזה. אפשר להזין את שם המוצר ידנית.';
+      return;
+    }
+
+    scanIntervalId = setInterval(async () => {
+      if(!video.videoWidth) return; // video not ready yet
+      try{
+        const codes = await detector.detect(video);
+        if(codes.length > 0){
+          handleBarcode(codes[0].rawValue);
+        }
+      } catch(e){
+        // a single failed frame isn't fatal, just keep trying
+      }
+    }, 400);
+  }
+
+  function closeScanner(){
+    const overlay = document.getElementById('scanOverlay');
+    overlay.classList.remove('open');
+
+    if(scanIntervalId){ clearInterval(scanIntervalId); scanIntervalId = null; }
+    if(scanStream){
+      scanStream.getTracks().forEach(track => track.stop());
+      scanStream = null;
+    }
+  }
+
+  async function handleBarcode(code){
+    const status = document.getElementById('scanStatus');
+    status.textContent = `נסרק ברקוד ${code} — מחפש את שם המוצר…`;
+
+    if(scanIntervalId){ clearInterval(scanIntervalId); scanIntervalId = null; } // stop re-triggering while we look it up
+
+    let productName = null;
+    try{
+      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_he`);
+      const data = await res.json();
+      if(data && data.product){
+        productName = data.product.product_name_he || data.product.product_name || null;
+      }
+    } catch(e){
+      console.warn('חיפוש המוצר נכשל, ממשיכים עם מספר הברקוד בלבד:', e);
+    }
+
+    closeScanner();
+
+    const input = document.getElementById('itemName');
+    input.value = productName || code;
+    renderCategoryExtra();
+    checkSpelling();
+    input.focus();
+
+    if(!productName){
+      showFormError(`לא הצלחתי למצוא שם למוצר עם הברקוד ${code} — אפשר לכתוב את השם ידנית לפני ההוספה.`);
+    }
+  }
+
+  function shareToWhatsApp(){
+    const needed = items.filter(i => i.status === 'needed');
+    const source = needed.length ? needed : items;
+    const heading = needed.length ? '🛒 רשימת קניות - חסר בבית:' : '🛒 רשימת קניות:';
+
+    if(source.length === 0){
+      alert('הרשימה ריקה, אין מה לשתף כרגע.');
+      return;
+    }
+
+    const lines = source.map(i => `• ${i.name}${i.quantity > 1 ? ` (×${i.quantity})` : ''}`);
+    const text = [heading, ...lines].join('\n');
+    const url = 'https://wa.me/?text=' + encodeURIComponent(text);
+    window.open(url, '_blank');
+  }
+
+  function stepQuantity(delta){
+    const qtyInput = document.getElementById('itemQty');
+    const current = parseInt(qtyInput.value, 10) || 1;
+    qtyInput.value = Math.max(1, current + delta);
+  }
+
+  function readQuantity(){
+    const qtyInput = document.getElementById('itemQty');
+    const parsed = parseInt(qtyInput.value, 10);
+    return (!isNaN(parsed) && parsed >= 1) ? parsed : 1;
+  }
+
+  function addItem(){
+    const input = document.getElementById('itemName');
+    const baseName = input.value.trim();
+    showFormError('');
+
+    if(!baseName){
+      showFormError('צריך להזין שם מוצר לפני ההוספה.');
+      return;
+    }
+
+    const name = (baseName + categorySuffix()).trim();
+    const quantity = readQuantity();
+
+    const existing = items.find(i => i.name.toLowerCase() === name.toLowerCase());
+    if(existing){
+      // re-adding an item you already had is itself a signal: the gap
+      // between its last purchase and right now is real data about how
+      // fast you actually go through it, so blend it into the average
+      const interval = daysPassed(existing.lastPurchaseDate);
+      if(interval > 0){
+        existing.averageDays = Math.max(1, Math.round((existing.averageDays + interval) / 2));
+      }
+      existing.status = 'needed';
+      existing.quantity = quantity;
+      showFormError(`"${existing.name}" כבר ברשימה — סימנתי אותו כחסר ועדכנתי את קצב הצריכה (${existing.averageDays} ימים בממוצע).`);
+      input.value = '';
+      document.getElementById('itemQty').value = 1;
+      renderCategoryExtra();
+      renderItems();
+      persistItems();
+      return;
+    }
+
+    items.push({
+      id: String(Date.now()),
+      name: name,
+      status: 'needed',
+      lastPurchaseDate: new Date().toISOString().slice(0,10),
+      averageDays: 7,
+      lastPrice: 0,
+      quantity: quantity
+    });
+    input.value = '';
+    document.getElementById('itemQty').value = 1;
+    document.getElementById('spellSuggestion').style.display = 'none';
+    renderCategoryExtra();
+    renderItems();
+    persistItems();
+  }
+
+  document.getElementById('itemName').addEventListener('keypress', e => {
+    if(e.key === 'Enter') addItem();
+  });
+  document.getElementById('itemName').addEventListener('input', () => {
+    showFormError('');
+    checkSpelling();
+    renderCategoryExtra();
+  });
+
+  loadItems();
+</script>
+
+</body>
+</html>
