@@ -77,6 +77,28 @@
     color: var(--chalk-dim);
     margin:0 0 18px;
   }
+  .list-mode-bar{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    background:#1c1d18;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:16px;
+    font-size:0.8em;
+    color: var(--chalk-dim);
+  }
+  .mode-btn{
+    background: transparent;
+    border:1px solid var(--avocado-dim);
+    color: var(--avocado);
+    padding:5px 10px;
+    font-size:0.85em;
+    border-radius:7px;
+  }
+  .mode-btn:hover{ background: rgba(143,174,82,0.12); border-color: var(--avocado); }
   .add-form{
     display:flex;
     gap:8px;
@@ -551,6 +573,8 @@
   </header>
   <p class="sub">מעקב מלאי לפי קצב צריכה ממוצע</p>
 
+  <div class="list-mode-bar" id="listModeBar"></div>
+
   <div class="add-form">
     <input type="text" id="itemName" placeholder="שם המוצר (למשל: חלב 3%)" spellcheck="true" lang="he" autocomplete="off">
     <div class="qty-picker">
@@ -603,6 +627,50 @@
 
   const STORAGE_KEY = 'shopping-list:items';
 
+  // --- list mode: personal (only this device) vs family (shared via a link) --
+  // Default is personal - nobody sees your list unless you explicitly create
+  // and share a family link. Opening that link switches the opener into the
+  // same shared family list instead of their own personal one.
+  function getUrlParam(name){
+    return new URLSearchParams(window.location.search).get(name);
+  }
+  function generateCode(len){
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+    let out = '';
+    for(let i=0;i<len;i++) out += chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
+
+  let listMode = 'personal';
+  let familyCode = null;
+  let personalDeviceId = null;
+
+  const urlFamilyCode = getUrlParam('family');
+  if(urlFamilyCode){
+    listMode = 'family';
+    familyCode = urlFamilyCode.toUpperCase();
+  }
+
+  if(typeof window.storage === 'undefined'){
+    // hosted site: remember a personal device id across visits (safe here -
+    // this branch never runs inside the Claude artifact sandbox)
+    personalDeviceId = localStorage.getItem('shopping-list-device-id');
+    if(!personalDeviceId){
+      personalDeviceId = generateCode(4) + generateCode(4);
+      localStorage.setItem('shopping-list-device-id', personalDeviceId);
+    }
+    if(listMode === 'family'){
+      // remember the last family code used, so a plain revisit without the
+      // ?family= param can still offer to rejoin it
+      localStorage.setItem('shopping-list-last-family-code', familyCode);
+    }
+  }
+
+  function effectiveKey(suffix){
+    const base = listMode === 'family' ? `shopping-list-family:${familyCode}` : `shopping-list-personal:${personalDeviceId || 'me'}`;
+    return suffix ? `${base}:${suffix}` : base;
+  }
+
   // --- storage backend ------------------------------------------------
   // This same file works two ways:
   // 1) Inside Claude (as this artifact) -> uses Claude's built-in shared
@@ -652,10 +720,14 @@
     return arr.map((i, idx) => sanitizeItem(i, Date.now() + idx)).filter(Boolean);
   }
 
+  let itemsFirebaseRef = null;
+
   async function loadItems(){
+    if(itemsFirebaseRef){ itemsFirebaseRef.off(); itemsFirebaseRef = null; } // detach any previous mode's listener
+
     if(usingClaudeStorage){
       try{
-        const res = await window.storage.get(STORAGE_KEY, true);
+        const res = await window.storage.get(effectiveKey('items'), listMode === 'family');
         if(res && res.value){
           items = ingestRawItems(JSON.parse(res.value));
         } else {
@@ -667,20 +739,21 @@
         items = [];
       }
       loaded = true;
-      document.getElementById('statusLine').textContent = '👥 רשימה משותפת — גלויה לכל מי שפותח את הצ׳אט הזה';
+      renderListModeBar();
       renderItems();
 
     } else if(firebaseReady){
-      firebaseDb.ref(STORAGE_KEY).on('value', snapshot => {
+      itemsFirebaseRef = firebaseDb.ref(effectiveKey('items'));
+      itemsFirebaseRef.on('value', snapshot => {
         const val = snapshot.val();
         if(val){
           items = ingestRawItems(val);
         } else {
           items = SEED_ITEMS.slice();
-          persistItems(); // seed the database once, on whoever opens it first
+          persistItems(); // seed this list once, on whoever opens it first
         }
         loaded = true;
-        document.getElementById('statusLine').textContent = '👥 רשימה משותפת בזמן אמת (Firebase)';
+        renderListModeBar();
         renderItems();
       }, err => {
         console.error('שגיאת Firebase:', err);
@@ -704,14 +777,14 @@
   async function persistItems(){
     if(usingClaudeStorage){
       try{
-        const result = await window.storage.set(STORAGE_KEY, JSON.stringify(items), true);
+        const result = await window.storage.set(effectiveKey('items'), JSON.stringify(items), listMode === 'family');
         if(!result){ console.error('שמירה נכשלה'); }
       } catch(e){
         console.error('שגיאת שמירה:', e);
       }
     } else if(firebaseReady){
       try{
-        await firebaseDb.ref(STORAGE_KEY).set(items);
+        await firebaseDb.ref(effectiveKey('items')).set(items);
       } catch(e){
         console.error('שגיאת שמירה ל-Firebase:', e);
       }
@@ -722,19 +795,23 @@
   // --- learned barcode -> name mappings ------------------------------
   // remembers manual corrections after a scan lookup failed or was wrong,
   // so scanning the same physical product again is instant next time
-  const BARCODE_NAMES_KEY = 'shopping-list:barcode-names';
   let barcodeNames = {};
+  let barcodeFirebaseRef = null;
 
   async function loadBarcodeNames(){
+    if(barcodeFirebaseRef){ barcodeFirebaseRef.off(); barcodeFirebaseRef = null; }
+
     if(usingClaudeStorage){
       try{
-        const res = await window.storage.get(BARCODE_NAMES_KEY, true);
+        const res = await window.storage.get(effectiveKey('barcodes'), listMode === 'family');
         if(res && res.value) barcodeNames = JSON.parse(res.value);
+        else barcodeNames = {};
       } catch(e){
-        // no saved mappings yet - fine, start empty
+        barcodeNames = {}; // no saved mappings yet - fine, start empty
       }
     } else if(firebaseReady){
-      firebaseDb.ref(BARCODE_NAMES_KEY).on('value', snapshot => {
+      barcodeFirebaseRef = firebaseDb.ref(effectiveKey('barcodes'));
+      barcodeFirebaseRef.on('value', snapshot => {
         barcodeNames = snapshot.val() || {};
       });
     }
@@ -743,18 +820,83 @@
   async function persistBarcodeNames(){
     if(usingClaudeStorage){
       try{
-        await window.storage.set(BARCODE_NAMES_KEY, JSON.stringify(barcodeNames), true);
+        await window.storage.set(effectiveKey('barcodes'), JSON.stringify(barcodeNames), listMode === 'family');
       } catch(e){
         console.error('שגיאת שמירת מאגר ברקודים:', e);
       }
     } else if(firebaseReady){
       try{
-        await firebaseDb.ref(BARCODE_NAMES_KEY).set(barcodeNames);
+        await firebaseDb.ref(effectiveKey('barcodes')).set(barcodeNames);
       } catch(e){
         console.error('שגיאת שמירת מאגר ברקודים ל-Firebase:', e);
       }
     }
   }
+
+  // --- switching between personal and family list mode ------------------
+  function renderListModeBar(){
+    const bar = document.getElementById('listModeBar');
+    if(!bar) return;
+
+    if(listMode === 'family'){
+      bar.innerHTML = `
+        <span>👥 רשימה משפחתית (קוד ${familyCode})</span>
+        <button class="mode-btn" onclick="copyFamilyLink()">🔗 העתק קישור הזמנה</button>
+        <button class="mode-btn" onclick="switchToPersonal()">🔒 לרשימה האישית שלי</button>
+      `;
+    } else {
+      bar.innerHTML = `
+        <span>🔒 רשימה אישית (רק אתם רואים אותה)</span>
+        <button class="mode-btn" onclick="createFamilyList()">👥 שתפו עם המשפחה</button>
+      `;
+    }
+  }
+
+  function createFamilyList(){
+    const code = generateCode(6);
+    switchMode('family', code);
+    copyFamilyLink();
+  }
+
+  function copyFamilyLink(){
+    const url = new URL(window.location.href);
+    url.searchParams.set('family', familyCode);
+    const link = url.toString();
+
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(link).then(() => {
+        showFormError('קישור ההזמנה הועתק! שלחו אותו למי שתרצו שיצטרף לרשימה המשפחתית.');
+      }).catch(() => {
+        prompt('העתיקו את הקישור הזה ידנית:', link);
+      });
+    } else {
+      prompt('העתיקו את הקישור הזה ידנית:', link);
+    }
+  }
+
+  function switchToPersonal(){
+    switchMode('personal', null);
+  }
+
+  function switchMode(mode, code){
+    listMode = mode;
+    familyCode = code;
+
+    const url = new URL(window.location.href);
+    if(mode === 'family'){
+      url.searchParams.set('family', code);
+      if(!usingClaudeStorage) localStorage.setItem('shopping-list-last-family-code', code);
+    } else {
+      url.searchParams.delete('family');
+    }
+    window.history.replaceState({}, '', url);
+
+    loaded = false;
+    document.getElementById('statusLine').textContent = 'טוען נתונים…';
+    loadItems();
+    loadBarcodeNames();
+  }
+
 
   function sanitizeItem(raw, fallbackId){
     if(!raw || typeof raw !== 'object') return null;
@@ -1466,6 +1608,17 @@
 
     if(source.length === 0){
       alert('הרשימה ריקה, אין מה לשתף כרגע.');
+      return;
+    }
+
+    // sharing only makes sense with a family list - a personal list's link
+    // would just give the recipient their own separate empty list
+    if(listMode === 'personal'){
+      const wantsFamily = confirm('כרגע זו רשימה אישית. כדי שהצד השני יוכל לראות ולערוך את אותה רשימה, נהפוך אותה לרשימה משפחתית משותפת. להמשיך?');
+      if(!wantsFamily) return;
+      createFamilyList();
+      // switchMode() reloads data async - give it a moment before sharing the link
+      setTimeout(() => shareToWhatsApp(), 600);
       return;
     }
 
