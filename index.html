@@ -545,14 +545,20 @@
   const usingClaudeStorage = (typeof window.storage !== 'undefined');
   let firebaseDb = null;
   let firebaseReady = false;
+  let firebaseInitError = null;
 
-  if(!usingClaudeStorage && typeof firebase !== 'undefined' && firebaseConfig.apiKey !== 'YOUR_API_KEY'){
-    try{
-      firebase.initializeApp(firebaseConfig);
-      firebaseDb = firebase.database();
-      firebaseReady = true;
-    } catch(e){
-      console.error('שגיאת אתחול Firebase:', e);
+  if(!usingClaudeStorage && firebaseConfig.apiKey !== 'YOUR_API_KEY'){
+    if(typeof firebase === 'undefined'){
+      firebaseInitError = 'ספריית Firebase לא נטענה (בדקו חיבור לאינטרנט, או שחוסם פרסומות/פרטיות חסם את gstatic.com).';
+    } else {
+      try{
+        firebase.initializeApp(firebaseConfig);
+        firebaseDb = firebase.database();
+        firebaseReady = true;
+      } catch(e){
+        firebaseInitError = 'שגיאת אתחול Firebase: ' + (e && e.message ? e.message : e);
+        console.error('שגיאת אתחול Firebase:', e);
+      }
     }
   }
 
@@ -600,6 +606,7 @@
         console.error('שגיאת Firebase:', err);
         items = [];
         loaded = true;
+        document.getElementById('statusLine').textContent = '❌ שגיאת Firebase: ' + (err && err.message ? err.message : err);
         renderItems();
       });
 
@@ -607,7 +614,9 @@
       // no backend configured at all -> works for this session only
       items = SEED_ITEMS.slice();
       loaded = true;
-      document.getElementById('statusLine').textContent = '⚠️ אין שמירה מוגדרת — הנתונים לא יישמרו אחרי סגירת הדף';
+      document.getElementById('statusLine').textContent = firebaseInitError
+        ? '❌ ' + firebaseInitError
+        : '⚠️ אין שמירה מוגדרת — הנתונים לא יישמרו אחרי סגירת הדף';
       renderItems();
     }
   }
