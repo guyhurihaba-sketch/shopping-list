@@ -424,6 +424,21 @@
     color: var(--chalk-dim);
     margin-bottom:12px;
   }
+  .price-control{
+    font-size:0.76em;
+    color: var(--mustard);
+    background: rgba(216,169,52,0.1);
+    border: 1px solid rgba(216,169,52,0.3);
+    border-radius:8px;
+    padding:6px 10px;
+    margin-bottom:12px;
+    line-height:1.5;
+  }
+  .price-control.over{
+    color: var(--tomato);
+    background: rgba(158,27,65,0.1);
+    border-color: rgba(158,27,65,0.4);
+  }
   .item-actions{
     display:flex;
     flex-wrap:wrap;
@@ -892,6 +907,7 @@
     const dPassed = daysPassed(item.lastPurchaseDate);
     const isNeeded = item.status === 'needed';
     const stampLabel = isNeeded ? 'חסר' : 'במלאי';
+    const priceControl = findPriceControlMatch(item.name);
 
     return `
       <div class="item-card ${isNeeded ? 'is-needed' : ''}">
@@ -913,6 +929,11 @@
           <span class="gauge-pct">${pct}%</span>
         </div>
         <div class="item-meta">קנייה אחרונה: לפני ${dPassed} ימים · ממוצע צריכה: ${item.averageDays} ימים</div>
+        ${priceControl ? `
+        <div class="price-control ${item.lastPrice > priceControl.maxPrice ? 'over' : ''}">
+          🏛️ מוצר בפיקוח מחירים — מחיר מרבי ₪${priceControl.maxPrice.toFixed(2)} (${priceControl.pkg})
+          ${item.lastPrice > priceControl.maxPrice ? '<br>⚠️ המחיר ששילמתם גבוה מהמחיר המרבי החוקי' : ''}
+        </div>` : ''}
         <div class="item-actions">
           <button class="btn-toggle" onclick="toggleStatus('${item.id}')">${isNeeded ? 'סמן כקיים' : 'סמן כחסר'}</button>
           <button class="btn-toggle" title="ערוך שם ותדירות" onclick="editItem('${item.id}')">✎</button>
