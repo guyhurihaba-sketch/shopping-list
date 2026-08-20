@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -10,6 +11,11 @@
      GitHub Pages) and a real config is filled in below. Harmless otherwise. -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<!-- ZXing: cross-browser barcode scanning (works on iPhone/Safari and
+     desktop too, unlike the native BarcodeDetector API which is
+     Android-Chrome-only). -->
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+<script src="https://unpkg.com/@zxing/browser@latest"></script>
 <style>
   :root{
     --bg: #23241f;
@@ -982,8 +988,8 @@
   }
 
   // --- barcode scanning ---------------------------------------------------
-  let scanStream = null;
-  let scanIntervalId = null;
+  let zxingControls = null;
+  let scanHandled = false;
 
   async function openScanner(){
     const overlay = document.getElementById('scanOverlay');
@@ -991,62 +997,46 @@
     const video = document.getElementById('scanVideo');
 
     overlay.classList.add('open');
-    status.textContent = 'מבקש הרשאת מצלמה…';
+    scanHandled = false;
+    status.textContent = 'טוען את מנוע הסריקה…';
 
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-      status.textContent = 'הדפדפן הזה לא תומך בגישה למצלמה כאן. אפשר להזין את שם המוצר ידנית.';
+      status.textContent = 'הדפדפן הזה לא תומך בגישה למצלמה. אפשר להזין את שם המוצר ידנית.';
       return;
     }
+
+    if(typeof ZXingBrowser === 'undefined'){
+      status.textContent = 'ספריית הסריקה לא נטענה (בדקו חיבור לאינטרנט) — אפשר להזין את שם המוצר ידנית.';
+      return;
+    }
+
+    status.textContent = 'מבקש הרשאת מצלמה…';
 
     try{
-      scanStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      });
-      video.srcObject = scanStream;
-    } catch(e){
-      console.error('שגיאת מצלמה:', e);
-      status.textContent = 'לא הצלחתי לקבל גישה למצלמה (ייתכן שההרשאה נחסמה). אפשר להזין את שם המוצר ידנית.';
-      return;
-    }
-
-    if(!('BarcodeDetector' in window)){
-      status.textContent = 'הדפדפן הזה לא תומך בזיהוי ברקוד אוטומטי. אפשר להזין את שם המוצר ידנית.';
-      return;
-    }
-
-    status.textContent = 'כוונו את הברקוד לתוך המסגרת…';
-
-    let detector;
-    try{
-      detector = new BarcodeDetector({
-        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']
-      });
-    } catch(e){
-      status.textContent = 'זיהוי ברקוד לא זמין בדפדפן הזה. אפשר להזין את שם המוצר ידנית.';
-      return;
-    }
-
-    scanIntervalId = setInterval(async () => {
-      if(!video.videoWidth) return; // video not ready yet
-      try{
-        const codes = await detector.detect(video);
-        if(codes.length > 0){
-          handleBarcode(codes[0].rawValue);
+      const reader = new ZXingBrowser.BrowserMultiFormatReader();
+      // deviceId left undefined -> the library picks the environment
+      // (back) camera automatically when available
+      zxingControls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
+        if(result && !scanHandled){
+          scanHandled = true;
+          handleBarcode(result.getText());
         }
-      } catch(e){
-        // a single failed frame isn't fatal, just keep trying
-      }
-    }, 400);
+        // decode errors on frames with no barcode are expected and ignored
+      });
+      status.textContent = 'כוונו את הברקוד לתוך המסגרת…';
+    } catch(e){
+      console.error('שגיאת מצלמה/סריקה:', e);
+      status.textContent = 'לא הצלחתי לגשת למצלמה (ייתכן שההרשאה נחסמה, או שאין מצלמה זמינה). אפשר להזין את שם המוצר ידנית.';
+    }
   }
 
   function closeScanner(){
     const overlay = document.getElementById('scanOverlay');
     overlay.classList.remove('open');
 
-    if(scanIntervalId){ clearInterval(scanIntervalId); scanIntervalId = null; }
-    if(scanStream){
-      scanStream.getTracks().forEach(track => track.stop());
-      scanStream = null;
+    if(zxingControls){
+      try{ zxingControls.stop(); } catch(e){ /* already stopped */ }
+      zxingControls = null;
     }
   }
 
@@ -1054,7 +1044,7 @@
     const status = document.getElementById('scanStatus');
     status.textContent = `נסרק ברקוד ${code} — מחפש את שם המוצר…`;
 
-    if(scanIntervalId){ clearInterval(scanIntervalId); scanIntervalId = null; } // stop re-triggering while we look it up
+    if(zxingControls){ try{ zxingControls.stop(); } catch(e){} } // stop re-triggering while we look it up
 
     let productName = null;
     try{
