@@ -1013,17 +1013,31 @@
     status.textContent = 'מבקש הרשאת מצלמה…';
 
     try{
-      const reader = new ZXingBrowser.BrowserMultiFormatReader();
-      // deviceId left undefined -> the library picks the environment
-      // (back) camera automatically when available
-      zxingControls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
+      let reader;
+      if(typeof ZXing !== 'undefined' && ZXing.DecodeHintType){
+        const hints = new Map();
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true); // spend more effort per frame, helps with low-quality/angled shots
+        reader = new ZXingBrowser.BrowserMultiFormatReader(hints);
+      } else {
+        reader = new ZXingBrowser.BrowserMultiFormatReader();
+      }
+
+      const constraints = {
+        video: {
+          facingMode: { ideal: 'environment' }, // prefer the back camera
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      zxingControls = await reader.decodeFromConstraints(constraints, video, (result) => {
         if(result && !scanHandled){
           scanHandled = true;
           handleBarcode(result.getText());
         }
         // decode errors on frames with no barcode are expected and ignored
       });
-      status.textContent = 'כוונו את הברקוד לתוך המסגרת…';
+      status.textContent = 'כוונו את הברקוד למסגרת, במרחק כ-10 ס״מ, באור טוב';
     } catch(e){
       console.error('שגיאת מצלמה/סריקה:', e);
       status.textContent = 'לא הצלחתי לגשת למצלמה (ייתכן שההרשאה נחסמה, או שאין מצלמה זמינה). אפשר להזין את שם המוצר ידנית.';
