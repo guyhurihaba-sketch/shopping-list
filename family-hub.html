@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>הלוח המשפחתי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cork: #6b4a30;
+    --cork-dark: #5a3d27;
+    --note: #f4ecd8;
+    --note-edge: #e4d7b8;
+    --ink: #2c2318;
+    --ink-dim: #6b5f4d;
+    --pin-red: #c0392b;
+    --pin-teal: #2a7f7a;
+    --pin-mustard: #d4a017;
+    --twine: #d8c9a3;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    padding:40px 16px 60px;
+    font-family:'Rubik', sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at 15% 10%, rgba(255,255,255,0.05) 0, transparent 40%),
+      radial-gradient(circle at 85% 85%, rgba(0,0,0,0.15) 0, transparent 45%),
+      repeating-radial-gradient(circle at 50% 50%, var(--cork) 0px, var(--cork) 2px, var(--cork-dark) 3px, var(--cork) 4px);
+  }
+  header{
+    text-align:center;
+    margin-bottom:8px;
+  }
+  .site-logo{
+    width:96px;
+    height:96px;
+    object-fit:contain;
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,0.45));
+    margin-bottom:10px;
+  }
+  h1{
+    font-size:1.9em;
+    font-weight:800;
+    color:#fff8ea;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.35);
+    margin:0 0 4px;
+  }
+  .sub{
+    font-family:'Space Mono', monospace;
+    font-size:0.8em;
+    color: rgba(255,248,234,0.75);
+    margin:0 0 34px;
+  }
+  .board{
+    max-width:420px;
+    margin:0 auto;
+    display:flex;
+    flex-direction:column;
+    gap:34px;
+  }
+  .note{
+    position:relative;
+    background: var(--note);
+    border:1px solid var(--note-edge);
+    border-radius:4px;
+    padding:22px 20px 20px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.35), 0 2px 0 rgba(0,0,0,0.08) inset;
+    text-decoration:none;
+    color: var(--ink);
+    display:block;
+    transition: transform .15s ease;
+  }
+  .note:hover{ transform: translateY(-3px) rotate(0deg) !important; }
+  .note:nth-child(1){ transform: rotate(-1.6deg); }
+  .note:nth-child(2){ transform: rotate(1.3deg); }
+  .note:nth-child(3){ transform: rotate(-0.8deg); }
+
+  .pin{
+    position:absolute;
+    top:-11px;
+    right:26px;
+    width:20px;
+    height:20px;
+    border-radius:50%;
+    box-shadow: 0 3px 5px rgba(0,0,0,0.4);
+    border:2px solid rgba(255,255,255,0.35);
+  }
+  .note:nth-child(1) .pin{ background: var(--pin-red); }
+  .note:nth-child(2) .pin{ background: var(--pin-teal); }
+  .note:nth-child(3) .pin{ background: var(--pin-mustard); }
+
+  .note-icon{
+    font-size:1.8em;
+    margin-bottom:6px;
+    display:block;
+  }
+  .note-title{
+    font-size:1.15em;
+    font-weight:700;
+    margin-bottom:4px;
+  }
+  .note-desc{
+    font-size:0.86em;
+    color: var(--ink-dim);
+    line-height:1.5;
+    margin-bottom:14px;
+  }
+  .note-open{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-family:'Space Mono', monospace;
+    font-size:0.78em;
+    font-weight:700;
+    color: var(--ink);
+    border-bottom:2px solid currentColor;
+    padding-bottom:1px;
+  }
+
+  footer{
+    text-align:center;
+    margin-top:44px;
+    font-family:'Space Mono', monospace;
+    font-size:0.68em;
+    color: rgba(255,248,234,0.5);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .note{ transition:none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <img class="site-logo" src="logo.png" alt="הלוגו שלנו">
+  <h1>🏠 הלוח המשפחתי שלנו</h1>
+  <p class="sub">שלושה כלים, מקום אחד</p>
+</header>
+
+<div class="board">
+
+  <a class="note" id="shoppingListLink" href="#" target="_blank" rel="noopener">
+    <span class="pin"></span>
+    <span class="note-icon">🛒</span>
+    <div class="note-title">רשימת קניות</div>
+    <div class="note-desc">מנהלים ביחד מה חסר בבית, בזמן אמת</div>
+    <span class="note-open">פתחו ↗</span>
+  </a>
+
+  <a class="note" href="https://flight-hunter-frontend.onrender.com/" target="_blank" rel="noopener">
+    <span class="pin"></span>
+    <span class="note-icon">✈️</span>
+    <div class="note-title">Flight Hunter</div>
+    <div class="note-desc">עוקבים אחרי מחירי טיסות</div>
+    <span class="note-open">פתחו ↗</span>
+  </a>
+
+  <a class="note" href="https://hurihaba-beep.github.io/---TripKal-/" target="_blank" rel="noopener">
+    <span class="pin"></span>
+    <span class="note-icon">🗺️</span>
+    <div class="note-title">TripKal</div>
+    <div class="note-desc">מתכננים את הטיול הבא</div>
+    <span class="note-open">פתחו ↗</span>
+  </a>
+
+</div>
+
+<footer>עודכן ידנית · הלוח שלכם</footer>
+
+<script>
+  // preserve a ?family=CODE in this hub's own URL and forward it to the
+  // shopping list link, so opening a family-invite link here still joins
+  // the right shared list
+  const params = new URLSearchParams(window.location.search);
+  const familyCode = params.get('family');
+  const shoppingListBase = 'https://guyhurihaba-sketch.github.io/shopping-list/';
+  const link = document.getElementById('shoppingListLink');
+  link.href = familyCode
+    ? `${shoppingListBase}?family=${encodeURIComponent(familyCode)}`
+    : shoppingListBase;
+</script>
+
+</body>
+</html>
