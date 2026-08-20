@@ -99,6 +99,8 @@
     border-radius:7px;
   }
   .mode-btn:hover{ background: rgba(143,174,82,0.12); border-color: var(--avocado); }
+  .mode-btn.danger{ border-color: var(--tomato); color: var(--tomato); }
+  .mode-btn.danger:hover{ background: rgba(158,27,65,0.12); border-color: var(--tomato); }
   .add-form{
     display:flex;
     gap:8px;
@@ -731,7 +733,7 @@
         if(res && res.value){
           items = ingestRawItems(JSON.parse(res.value));
         } else {
-          items = SEED_ITEMS.slice();
+          items = listMode === 'family' ? [] : SEED_ITEMS.slice();
           await persistItems();
         }
       } catch(e){
@@ -749,7 +751,7 @@
         if(val){
           items = ingestRawItems(val);
         } else {
-          items = SEED_ITEMS.slice();
+          items = listMode === 'family' ? [] : SEED_ITEMS.slice();
           persistItems(); // seed this list once, on whoever opens it first
         }
         loaded = true;
@@ -843,13 +845,30 @@
         <span>👥 רשימה משפחתית (קוד ${familyCode})</span>
         <button class="mode-btn" onclick="copyFamilyLink()">🔗 העתק קישור הזמנה</button>
         <button class="mode-btn" onclick="switchToPersonal()">🔒 לרשימה האישית שלי</button>
+        <button class="mode-btn danger" onclick="resetList()">🗑️ אפס רשימה</button>
       `;
     } else {
       bar.innerHTML = `
         <span>🔒 רשימה אישית (רק אתם רואים אותה)</span>
         <button class="mode-btn" onclick="createFamilyList()">👥 שתפו עם המשפחה</button>
+        <button class="mode-btn danger" onclick="resetList()">🗑️ אפס רשימה</button>
       `;
     }
+  }
+
+  function resetList(){
+    if(items.length === 0){
+      showFormError('הרשימה כבר ריקה.');
+      return;
+    }
+    const label = listMode === 'family' ? 'הרשימה המשפחתית' : 'הרשימה האישית';
+    const confirmed = confirm(`לאפס את ${label}? כל המוצרים יימחקו לצמיתות - זה לא הפיך.`);
+    if(!confirmed) return;
+
+    items = [];
+    renderItems();
+    persistItems();
+    showFormError('הרשימה אופסה.');
   }
 
   function createFamilyList(){
