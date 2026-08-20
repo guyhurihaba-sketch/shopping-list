@@ -16,6 +16,8 @@
      Android-Chrome-only). -->
 <script src="https://unpkg.com/@zxing/library@latest"></script>
 <script src="https://unpkg.com/@zxing/browser@latest"></script>
+<!-- Tesseract.js: on-device OCR for the receipt scanner -->
+<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   :root{
     --bg: #23241f;
@@ -222,6 +224,62 @@
     font-size:0.85em;
   }
 
+  .receipt-box{
+    max-height:85vh;
+    overflow-y:auto;
+  }
+  #receiptReview{
+    text-align:right;
+    margin-top:10px;
+  }
+  .receipt-line{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 6px;
+    border-bottom:1px solid var(--line);
+  }
+  .receipt-line input[type="checkbox"]{
+    width:18px;
+    height:18px;
+    flex-shrink:0;
+    accent-color: var(--avocado);
+  }
+  .receipt-name{
+    flex:1;
+    min-width:0;
+    padding:7px 9px;
+    border-radius:7px;
+    border:1px solid var(--line);
+    background:#1c1d18;
+    color: var(--chalk);
+    font-family:'Rubik', sans-serif;
+    font-size:0.85em;
+  }
+  .receipt-price{
+    width:64px;
+    padding:7px 6px;
+    border-radius:7px;
+    border:1px solid var(--line);
+    background:#1c1d18;
+    color: var(--mustard);
+    font-family:'Space Mono', monospace;
+    font-size:0.85em;
+    text-align:center;
+  }
+  .receipt-actions{
+    display:flex;
+    gap:8px;
+    margin-top:14px;
+  }
+  .receipt-actions .btn-add{
+    flex:1;
+    padding:10px;
+  }
+  .receipt-actions .btn-scan-close{
+    flex:1;
+  }
+
   .form-error{
     display:none;
     color: var(--tomato);
@@ -335,7 +393,16 @@
     font-size:0.85em;
     color: var(--mustard);
     white-space:nowrap;
+    text-align:left;
   }
+  .price-trend{
+    display:block;
+    font-size:0.72em;
+    margin-top:2px;
+    font-weight:700;
+  }
+  .price-trend.up{ color: var(--tomato); }
+  .price-trend.down{ color: var(--avocado); }
 
   .buy-box{
     position:relative;
@@ -498,6 +565,8 @@
   <div class="form-error" id="formError"></div>
 
   <button class="btn-scan" onclick="openScanner()">📷 סרוק ברקוד / QR</button>
+  <button class="btn-scan" onclick="openReceiptScanner()">🧾 סרוק חשבונית</button>
+  <input type="file" id="receiptFileInput" accept="image/*" capture="environment" style="display:none" onchange="handleReceiptFile(event)">
   <button class="btn-share" onclick="shareToWhatsApp()">📤 שתף רשימה בוואטסאפ</button>
 
   <div id="neededSection"></div>
@@ -512,6 +581,17 @@
       <div class="scan-frame"></div>
       <div class="scan-status" id="scanStatus">מבקש הרשאת מצלמה…</div>
       <button class="btn-scan-close" onclick="closeScanner()">✕ סגור</button>
+    </div>
+  </div>
+
+  <div class="scan-overlay" id="receiptOverlay">
+    <div class="scan-box receipt-box">
+      <div class="scan-status" id="receiptStatus">מעבד תמונה…</div>
+      <div id="receiptReview"></div>
+      <div class="receipt-actions">
+        <button class="btn-scan-close" onclick="closeReceiptScanner()">ביטול</button>
+        <button class="btn-add" id="receiptConfirmBtn" onclick="confirmReceiptImport()" style="display:none">הוסף מסומנים</button>
+      </div>
     </div>
   </div>
 </div>
@@ -696,11 +776,14 @@
     let quantity = parseInt(raw.quantity, 10);
     if(isNaN(quantity) || quantity < 1) quantity = 1;
 
+    let previousPrice = parseFloat(raw.previousPrice);
+    if(isNaN(previousPrice)) previousPrice = null;
+
     let status = raw.status === 'needed' ? 'needed' : 'in_stock';
 
     return {
       id: raw.id ? String(raw.id) : String(fallbackId),
-      name, status, lastPurchaseDate, averageDays, lastPrice, quantity
+      name, status, lastPurchaseDate, averageDays, lastPrice, quantity, previousPrice
     };
   }
 
@@ -972,7 +1055,13 @@
             ${item.quantity > 1 ? `<span class="qty-badge">×${item.quantity}</span>` : ''}
             <span class="stamp ${item.status}">${stampLabel}</span>
           </div>
-          <span class="item-price">₪${Number(item.lastPrice).toFixed(2)}</span>
+          <span class="item-price">
+            ₪${Number(item.lastPrice).toFixed(2)}
+            ${(item.previousPrice != null && item.previousPrice !== item.lastPrice) ? `
+              <span class="price-trend ${item.lastPrice > item.previousPrice ? 'up' : 'down'}" title="מחיר קודם: ₪${Number(item.previousPrice).toFixed(2)}">
+                ${item.lastPrice > item.previousPrice ? '▲' : '▼'} היה ₪${Number(item.previousPrice).toFixed(2)}
+              </span>` : ''}
+          </span>
         </div>
         <div class="gauge-row">
           <div class="gauge"><div class="gauge-fill" style="width:${pct}%; background:${gaugeColor(pct)};"></div></div>
@@ -1069,6 +1158,19 @@
         item.averageDays = parsed;
       } else {
         alert(`"${newAvg}" אינו מספר ימים תקין — הערך הקודם (${item.averageDays}) נשאר.`);
+      }
+    }
+
+    const newPrice = prompt('מחיר (₪):', item.lastPrice);
+    if(newPrice !== null){
+      const parsed = parseFloat(newPrice);
+      if(!isNaN(parsed) && parsed >= 0){
+        if(parsed !== item.lastPrice){
+          item.previousPrice = item.lastPrice;
+        }
+        item.lastPrice = parsed;
+      } else {
+        alert(`"${newPrice}" אינו מחיר תקין — הערך הקודם (₪${item.lastPrice.toFixed(2)}) נשאר.`);
       }
     }
     renderItems();
@@ -1214,6 +1316,147 @@
     if(!productName){
       showFormError(`הברקוד ${code} לא נמצא במאגר — כתבו את שם המוצר ולחצו הוסף, והאפליקציה תזכור אותו לפעם הבאה.`);
     }
+  }
+
+  // --- receipt scanning (OCR) ---------------------------------------------
+  function openReceiptScanner(){
+    document.getElementById('receiptFileInput').click();
+  }
+
+  function closeReceiptScanner(){
+    document.getElementById('receiptOverlay').classList.remove('open');
+  }
+
+  async function handleReceiptFile(event){
+    const file = event.target.files[0];
+    event.target.value = ''; // reset so picking the same file again still fires onchange
+    if(!file) return;
+
+    const overlay = document.getElementById('receiptOverlay');
+    const status = document.getElementById('receiptStatus');
+    const review = document.getElementById('receiptReview');
+    const confirmBtn = document.getElementById('receiptConfirmBtn');
+
+    overlay.classList.add('open');
+    review.innerHTML = '';
+    review._parsedLines = null;
+    confirmBtn.style.display = 'none';
+    status.textContent = 'טוען מנוע זיהוי טקסט (בפעם הראשונה זה לוקח יותר זמן)…';
+
+    if(typeof Tesseract === 'undefined'){
+      status.textContent = 'ספריית זיהוי הטקסט לא נטענה (בדקו חיבור לאינטרנט) — אפשר להוסיף מוצרים ידנית בינתיים.';
+      return;
+    }
+
+    try{
+      const result = await Tesseract.recognize(file, 'heb+eng', {
+        logger: m => {
+          if(m.status === 'recognizing text'){
+            status.textContent = `מזהה טקסט… ${Math.round((m.progress || 0) * 100)}%`;
+          }
+        }
+      });
+
+      const lines = parseReceiptLines(result.data.text);
+
+      if(lines.length === 0){
+        status.textContent = 'לא זוהו שורות עם מחיר בתמונה. נסו לצלם שוב באור טוב, ישר, בלי קפלים בקבלה.';
+        return;
+      }
+
+      status.textContent = `נמצאו ${lines.length} שורות — סמנו מה להוסיף לרשימה, ואפשר לתקן שם/מחיר לפני ההוספה:`;
+      review.innerHTML = lines.map((l, idx) => `
+        <label class="receipt-line">
+          <input type="checkbox" checked data-idx="${idx}">
+          <input type="text" class="receipt-name" value="${escapeHtml(l.name)}" data-idx="${idx}">
+          <input type="number" step="0.1" class="receipt-price" value="${l.price}" data-idx="${idx}">
+        </label>
+      `).join('');
+      review._parsedLines = lines;
+      confirmBtn.style.display = 'block';
+
+    } catch(e){
+      console.error('שגיאת OCR:', e);
+      status.textContent = 'משהו השתבש בזיהוי הטקסט. נסו שוב עם תמונה ברורה יותר, או הוסיפו ידנית.';
+    }
+  }
+
+  function parseReceiptLines(text){
+    const rawLines = text.split('\n');
+    const priceRegex = /(\d{1,4}[.,]\d{2})\s*$/; // a price at the end of the line
+    const skipWords = [
+      'סה"כ', 'סהכ', 'total', 'מע"מ', 'מעמ', 'עודף', 'מזומן', 'אשראי',
+      'תודה', 'קבלה', 'חשבונית', 'עסקה', 'תאריך', 'שעה', 'סניף', 'קופה'
+    ];
+
+    const seen = new Map(); // dedupe same product appearing twice on one receipt (usually an OCR artifact)
+    for(const raw of rawLines){
+      const line = raw.trim();
+      if(!line || line.length < 3) continue;
+      if(skipWords.some(w => line.includes(w))) continue;
+
+      const m = line.match(priceRegex);
+      if(!m) continue;
+
+      const price = parseFloat(m[1].replace(',', '.'));
+      if(isNaN(price) || price <= 0 || price > 2000) continue; // sanity range for a single line item
+
+      let name = line.slice(0, m.index).trim();
+      name = name.replace(/[\d.\sxX*×]+$/, '').trim(); // strip trailing qty/unit noise like "x2" or "1.00"
+      if(!name || name.length < 2) continue;
+
+      const key = name.toLowerCase();
+      if(!seen.has(key)){
+        seen.set(key, { name, price });
+      }
+    }
+    return [...seen.values()];
+  }
+
+  function confirmReceiptImport(){
+    const review = document.getElementById('receiptReview');
+    const checkboxes = review.querySelectorAll('input[type="checkbox"]');
+    const today = new Date().toISOString().slice(0,10);
+    let importedCount = 0;
+
+    checkboxes.forEach(cb => {
+      if(!cb.checked) return;
+      const idx = cb.dataset.idx;
+      const nameInput = review.querySelector(`.receipt-name[data-idx="${idx}"]`);
+      const priceInput = review.querySelector(`.receipt-price[data-idx="${idx}"]`);
+      const name = nameInput.value.trim();
+      const price = parseFloat(priceInput.value);
+      if(!name || isNaN(price) || price < 0) return;
+
+      const existing = items.find(i => i.name.toLowerCase() === name.toLowerCase());
+      if(existing){
+        const interval = daysPassed(existing.lastPurchaseDate);
+        if(interval > 0){
+          existing.averageDays = Math.max(1, Math.round((existing.averageDays + interval) / 2));
+        }
+        // keep the last price for comparison instead of silently losing it
+        if(existing.lastPrice !== price){
+          existing.previousPrice = existing.lastPrice;
+        }
+        existing.lastPrice = price;
+        existing.lastPurchaseDate = today;
+        existing.status = 'in_stock';
+      } else {
+        items.push({
+          id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+          name, status: 'in_stock', lastPurchaseDate: today,
+          averageDays: 7, lastPrice: price, quantity: 1, previousPrice: null
+        });
+      }
+      importedCount++;
+    });
+
+    closeReceiptScanner();
+    renderItems();
+    persistItems();
+    showFormError(importedCount > 0
+      ? `יובאו ${importedCount} מוצרים מהחשבונית (סומנו כ"במלאי").`
+      : 'לא סומן אף מוצר לייבוא.');
   }
 
   function shareToWhatsApp(){
