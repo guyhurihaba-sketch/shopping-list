@@ -482,7 +482,7 @@
   <div class="suggestion" id="spellSuggestion"></div>
   <div class="form-error" id="formError"></div>
 
-  <button class="btn-scan" onclick="openScanner()">📷 סרוק ברקוד מוצר</button>
+  <button class="btn-scan" onclick="openScanner()">📷 סרוק ברקוד / QR</button>
   <button class="btn-share" onclick="shareToWhatsApp()">📤 שתף רשימה בוואטסאפ</button>
 
   <div id="neededSection"></div>
@@ -655,6 +655,37 @@
     'מגבות נייר', 'שקיות אשפה', 'תה', 'מים מינרלים', 'מיץ תפוזים', 'בננות',
     'תפוחים', 'לימונים', 'עוף', 'בשר טחון', 'דגים'
   ];
+
+  // "מוצרי יסוד בפיקוח מחירים" - a small, fixed list of government
+  // price-controlled staples with a legal maximum price. Not barcode-based
+  // (the regulation defines these by category, not GTIN), so matching is
+  // done against the product name. Source: Ministry of Economy, snapshot
+  // dates as published - worth refreshing occasionally as prices update.
+  const PRICE_CONTROLLED = [
+    { match: ['לחם אחיד', 'לחם כהה'], name: 'לחם אחיד (כהה)', pkg: 'כיכר 750 גרם', maxPrice: 7.30 },
+    { match: ['לחם לבן'], name: 'לחם לבן', pkg: 'כיכר 750 גרם', maxPrice: 7.31 },
+    { match: ['חלה', 'מאפה שמרים'], name: 'חלה / מאפה שמרים', pkg: 'כיכר 500 גרם', maxPrice: 6.56 },
+    { match: ['מלח'], name: 'מלח מאכל', pkg: '1 ק"ג', maxPrice: 2.07 },
+    { match: ['חלב 3%', 'חלב טרי 3%'], name: 'חלב טרי 3% שומן', pkg: 'שקית 1 ליטר', maxPrice: 6.21 },
+    { match: ['חלב 1%', 'חלב טרי 1%'], name: 'חלב טרי 1% שומן', pkg: 'שקית 1 ליטר', maxPrice: 5.76 },
+    { match: ['אשל', 'לבניה'], name: 'אשל / לבניה 4.5%', pkg: 'גביע 200 מ"ל', maxPrice: 1.93 },
+    { match: ['גילה', 'לבן 3%', 'גיל '], name: 'גילה / לבן 3%', pkg: 'גביע 200 מ"ל', maxPrice: 1.72 },
+    { match: ['שמנת חמוצה'], name: 'שמנת חמוצה 15%', pkg: 'גביע 200 מ"ל', maxPrice: 2.75 },
+    { match: ['גבינה צהובה', 'עמק', 'גלבוע'], name: 'גבינה קשה (עמק/גלבוע)', pkg: 'ק"ג', maxPrice: 51.14 },
+    { match: ['גבינה לבנה', 'קוטג'], name: 'גבינה לבנה / סקי 5%', pkg: '250 גרם', maxPrice: 5.68 },
+    { match: ['ביצים', 'ביצי מאכל'], name: 'ביצי מאכל (תריסר)', pkg: '12 יחידות', maxPrice: 15.19 }
+  ];
+
+  function findPriceControlMatch(name){
+    const clean = (name || '').trim();
+    if(!clean) return null;
+    for(const entry of PRICE_CONTROLLED){
+      if(entry.match.some(term => clean.includes(term))){
+        return entry;
+      }
+    }
+    return null;
+  }
 
   // category detection: typing a product name auto-shows the field that
   // makes sense for it (fat % for dairy, kg for meat, grams for produce)
@@ -1033,7 +1064,10 @@
       zxingControls = await reader.decodeFromConstraints(constraints, video, (result) => {
         if(result && !scanHandled){
           scanHandled = true;
-          handleBarcode(result.getText());
+          const isQr = (typeof ZXing !== 'undefined' && ZXing.BarcodeFormat)
+            ? result.getBarcodeFormat() === ZXing.BarcodeFormat.QR_CODE
+            : /^\d{6,14}$/.test(result.getText()) === false; // fallback guess if the enum isn't available
+          handleBarcode(result.getText(), isQr);
         }
         // decode errors on frames with no barcode are expected and ignored
       });
@@ -1054,21 +1088,32 @@
     }
   }
 
-  async function handleBarcode(code){
+  async function handleBarcode(code, isQr){
     const status = document.getElementById('scanStatus');
-    status.textContent = `נסרק ברקוד ${code} — מחפש את שם המוצר…`;
 
     if(zxingControls){ try{ zxingControls.stop(); } catch(e){} } // stop re-triggering while we look it up
 
     let productName = null;
-    try{
-      const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_he`);
-      const data = await res.json();
-      if(data && data.product){
-        productName = data.product.product_name_he || data.product.product_name || null;
+
+    if(isQr){
+      // a QR code can hold free text - if it already looks like a product
+      // name (not a URL/long payload), just use it directly, no lookup needed
+      const text = code.trim();
+      if(text && !/^https?:\/\//i.test(text) && text.length <= 60){
+        productName = text;
       }
-    } catch(e){
-      console.warn('חיפוש המוצר נכשל, ממשיכים עם מספר הברקוד בלבד:', e);
+      status.textContent = productName ? `נסרק QR: ${productName}` : 'נסרק QR, אך התוכן לא נראה כשם מוצר תקין.';
+    } else {
+      status.textContent = `נסרק ברקוד ${code} — מחפש את שם המוצר…`;
+      try{
+        const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_he`);
+        const data = await res.json();
+        if(data && data.product){
+          productName = data.product.product_name_he || data.product.product_name || null;
+        }
+      } catch(e){
+        console.warn('חיפוש המוצר נכשל, ממשיכים עם מספר הברקוד בלבד:', e);
+      }
     }
 
     closeScanner();
