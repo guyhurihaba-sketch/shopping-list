@@ -1193,13 +1193,13 @@
     closeScanner();
 
     const input = document.getElementById('itemName');
-    input.value = productName || code;
+    input.value = productName || ''; // don't dump the long barcode digits into the name field
     renderCategoryExtra();
     checkSpelling();
     input.focus();
 
     if(!productName){
-      showFormError(`לא הצלחתי למצוא שם למוצר עם הברקוד ${code} — אפשר לכתוב את השם ידנית לפני ההוספה.`);
+      showFormError(`הברקוד ${code} לא נמצא במאגר — כתבו את שם המוצר ולחצו הוסף, והאפליקציה תזכור אותו לפעם הבאה.`);
     }
   }
 
