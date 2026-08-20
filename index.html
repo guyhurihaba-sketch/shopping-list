@@ -1470,7 +1470,15 @@
     }
 
     const lines = source.map(i => `• ${i.name}${i.quantity > 1 ? ` (×${i.quantity})` : ''}`);
-    const text = [heading, ...lines].join('\n');
+    const siteUrl = window.location.href;
+    const canShareLink = /^https?:\/\//i.test(siteUrl); // skip odd internal URLs (e.g. inside Claude's preview)
+
+    const parts = [heading, ...lines];
+    if(canShareLink){
+      parts.push('', `📱 לצפייה ועריכה חיה (אפשר גם להוסיף מוצרים): ${siteUrl}`);
+    }
+
+    const text = parts.join('\n');
     const url = 'https://wa.me/?text=' + encodeURIComponent(text);
     window.open(url, '_blank');
   }
