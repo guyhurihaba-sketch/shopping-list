@@ -626,6 +626,43 @@
     // else: nothing configured, changes just stay in memory for this session
   }
 
+  // --- learned barcode -> name mappings ------------------------------
+  // remembers manual corrections after a scan lookup failed or was wrong,
+  // so scanning the same physical product again is instant next time
+  const BARCODE_NAMES_KEY = 'shopping-list:barcode-names';
+  let barcodeNames = {};
+
+  async function loadBarcodeNames(){
+    if(usingClaudeStorage){
+      try{
+        const res = await window.storage.get(BARCODE_NAMES_KEY, true);
+        if(res && res.value) barcodeNames = JSON.parse(res.value);
+      } catch(e){
+        // no saved mappings yet - fine, start empty
+      }
+    } else if(firebaseReady){
+      firebaseDb.ref(BARCODE_NAMES_KEY).on('value', snapshot => {
+        barcodeNames = snapshot.val() || {};
+      });
+    }
+  }
+
+  async function persistBarcodeNames(){
+    if(usingClaudeStorage){
+      try{
+        await window.storage.set(BARCODE_NAMES_KEY, JSON.stringify(barcodeNames), true);
+      } catch(e){
+        console.error('שגיאת שמירת מאגר ברקודים:', e);
+      }
+    } else if(firebaseReady){
+      try{
+        await firebaseDb.ref(BARCODE_NAMES_KEY).set(barcodeNames);
+      } catch(e){
+        console.error('שגיאת שמירת מאגר ברקודים ל-Firebase:', e);
+      }
+    }
+  }
+
   function sanitizeItem(raw, fallbackId){
     if(!raw || typeof raw !== 'object') return null;
 
@@ -1109,6 +1146,8 @@
     }
   }
 
+  let lastScannedBarcode = null;
+
   async function handleBarcode(code, isQr){
     const status = document.getElementById('scanStatus');
 
@@ -1124,16 +1163,30 @@
         productName = text;
       }
       status.textContent = productName ? `נסרק QR: ${productName}` : 'נסרק QR, אך התוכן לא נראה כשם מוצר תקין.';
+      lastScannedBarcode = null; // QR content isn't a barcode number, nothing to learn against
     } else {
-      status.textContent = `נסרק ברקוד ${code} — מחפש את שם המוצר…`;
-      try{
-        const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_he`);
-        const data = await res.json();
-        if(data && data.product){
-          productName = data.product.product_name_he || data.product.product_name || null;
+      lastScannedBarcode = code; // remember it so a manual name correction below gets learned
+
+      if(barcodeNames[code]){
+        // we've seen this exact barcode before and learned its name -
+        // no need to hit the external database again
+        productName = barcodeNames[code];
+        status.textContent = `נסרק ברקוד ${code} — נמצא שם שמור: ${productName}`;
+      } else {
+        status.textContent = `נסרק ברקוד ${code} — מחפש את שם המוצר…`;
+        try{
+          const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_he`);
+          const data = await res.json();
+          if(data && data.product){
+            productName = data.product.product_name_he || data.product.product_name || null;
+          }
+        } catch(e){
+          console.warn('חיפוש המוצר נכשל, ממשיכים עם מספר הברקוד בלבד:', e);
         }
-      } catch(e){
-        console.warn('חיפוש המוצר נכשל, ממשיכים עם מספר הברקוד בלבד:', e);
+        if(productName){
+          barcodeNames[code] = productName; // cache it for next time
+          persistBarcodeNames();
+        }
       }
     }
 
@@ -1191,6 +1244,17 @@
     const name = (baseName + categorySuffix()).trim();
     const quantity = readQuantity();
 
+    // if this add follows a barcode scan, remember whatever name the person
+    // actually confirmed - even if it differs from (or replaces a missing)
+    // API lookup, so scanning this exact product again is instant
+    if(lastScannedBarcode){
+      if(barcodeNames[lastScannedBarcode] !== baseName){
+        barcodeNames[lastScannedBarcode] = baseName;
+        persistBarcodeNames();
+      }
+      lastScannedBarcode = null;
+    }
+
     const existing = items.find(i => i.name.toLowerCase() === name.toLowerCase());
     if(existing){
       // re-adding an item you already had is itself a signal: the gap
@@ -1238,6 +1302,7 @@
   });
 
   loadItems();
+  loadBarcodeNames();
 </script>
 
 </body>
