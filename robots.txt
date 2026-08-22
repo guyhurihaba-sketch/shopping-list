@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://guyhurihaba-sketch.github.io/shopping-list/sitemap.xml
