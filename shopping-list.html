@@ -2248,11 +2248,11 @@
 
     if(!response.ok){
       const errBody = await response.json().catch(() => null);
+      const realMessage = (errBody && errBody.error && errBody.error.message) || `שגיאה ${response.status} מ-Gemini.`;
       if(response.status === 400 || response.status === 403){
-        localStorage.removeItem('shopping-list-gemini-key'); // bad/expired key - clear it so next try re-prompts
-        throw new Error('המפתח לא תקין - נסו שוב ותוכלו להזין מפתח חדש.');
+        localStorage.removeItem('shopping-list-gemini-key'); // clear the key so next try re-prompts, in case it really was the key
       }
-      throw new Error((errBody && errBody.error && errBody.error.message) || 'שגיאה בפנייה ל-Gemini.');
+      throw new Error(realMessage);
     }
 
     const data = await response.json();
